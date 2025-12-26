@@ -1,182 +1,209 @@
-// ROTRIX Application Firmware: Multi-Sensor Integration Source Code
-//
-// Copyright (c) 2025 REUDE Technologies Pvt. Ltd.
-// MIT License 
-//
-// This source code provides a starting point for integrating multiple sensors and actuators with the ROTRIX platform. 
-// Users can extend or modify the code to suit their specific sensor and hardware requirements. 
-//
-// Disclaimer: This code is provided as a sample for educational and prototyping purposes only. 
-// Users are responsible for adapting the code to their specific needs and testing it thoroughly before deployment. 
-// REUDE Technologies Pvt. Ltd. shall not be held liable for any mishappenings, damages, or malfunctions arising from the use of this code.
-// 
-// GitHub: https://github.com/REUDE-Technologies/REUDE_ROTRIX.git
-//
-// Prerequisites: 
-// Before using this sample code, ensure the following additional libraries are installed in your Arduino IDE,
-// Servo - For controlling motors via ESC.
-// HX711 - For processing data from load cell amplifiers.
-// Adafruit_MLX90640 - For interfacing with the MLX90640 thermal camera.
-// BreezyArduCAM - For handling RGB camera data.
-// Wire - For I2C communication.
-// SPI - For SPI communication with the RGB camera.
-//
-// This code supports the following hardware components:
-// Load cells with HX711 amplifiers, RPM Sensor, voltage & current sensors
-// and is specific to the following sensors:
-// Arducam 2 MP Mini module with OV2640 sensor & Adafruit MLX90640 IR thermal camera
-//
-// Customizing for Your Needs:
-// Update the pin assignments and variable values to match your hardware configuration.
-// Adjust calibration factors (e.g., for load cells) as per your sensors.
-// Extend the code by adding support for new sensors or additional processing.
+#include <Keyboard.h>
+#include <KeyboardLayout.h>
+#include <Keyboard_da_DK.h>
+#include <Keyboard_de_DE.h>
+#include <Keyboard_es_ES.h>
+#include <Keyboard_fr_FR.h>
+#include <Keyboard_hu_HU.h>
+#include <Keyboard_it_IT.h>
+#include <Keyboard_pt_PT.h>
+#include <Keyboard_sv_SE.h>
 
 #include <Servo.h>
-#include <Adafruit_MLX90640.h>
-#include <HX711.h>
-#include <Wire.h>
-#include <BreezyArduCAM.h>
-#include <SPI.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+/*#include <Adafruit_MLX90640.h>
 
-/* Device ID */
-String device_id = "REU_MTB_001"                    
+*/
 
-/* No. of values received from software */
-const int numValues = 4; 
+/*
+// HX711 circuit wiring
+*/
+// Load Cell 1
+const int LOADCELL1_DOUT_PIN = 12;
+const int LOADCELL1_SCK_PIN = 13;
+long calibration_factor = 96400.0;  // 10kg load cell
+long OFFSET_1 = 0;  // Tare value for load cell 1
 
-/* Initializing ESC variables with standard PWM values */
-unsigned int ESC_min;                                 // Minimum ESC PWM value (µs)
-unsigned int ESC_max;                                 // Maximum ESC PWM value (µs)
+// Load Cell 2
+const int LOADCELL2_DOUT_PIN = 16;
+const int LOADCELL2_SCK_PIN = 17;
+long calibration_factor_2 = 96400.0;  // 10kg load cell
+long OFFSET_2 = 0;  // Tare value for load cell 2
 
-/* Motor setup */
-Servo mot;
-const int MOTOR_SIGNAL_PIN;                           // Motor - ESC signal pin  
-unsigned int current_PWM = ESC_min;
-unsigned int input_PWM = ESC_min;
+unsigned int hx711_fail = 0;
 
-/* HX711 amplifier - load cell variables setup based on HX711 library */
-HX711 scale1;
-HX711 scale2;
-const int LOADCELL1_DOUT_PIN;                         // Thrust loadcell - amplifier pins
-const int LOADCELL1_SCK_PIN;
-const int LOADCELL2_DOUT_PIN;                         // Torque loadcell - amplifier pins
-const int LOADCELL2_SCK_PIN;
-long calibration_factor_1;                            // Thrust loadcell calibration value
-long calibration_factor_2;                            // Torque loadcell calibration value
-
-/* RPM sensor variables */
-byte PulsesPerRevolution;                             // number of propeller blades
-const unsigned long ZeroTimeout = 100000;          
-volatile unsigned long LastTimeWeMeasured;
-volatile unsigned long PeriodBetweenPulses = ZeroTimeout + 1000;
-volatile unsigned long PeriodAverage = ZeroTimeout + 1000;
-unsigned int PulseCounter = 1;
-unsigned long PeriodSum;
-unsigned int AmountOfReadings = 1;
-unsigned int ZeroDebouncingExtra;
-unsigned long FrequencyRaw;                        
-unsigned long FrequencyReal;
-unsigned long RPM;
-unsigned long LastTimeCycleMeasure = LastTimeWeMeasured;
-unsigned long CurrentMicros = micros();
-const int RPM_SENSOR_PIN;                            // RPM sensor signal pin
-
-/* Voltage & current sensor variables */
+//current & voltage sensor variables
 float sensorValue_volt;
+float arduino_voltage;
+float voltage;
 float batt_volt;
+
+// Temperature sensor variables
+float temperature;
+
+// Dallas Temperature sensor setup
+#define ONE_WIRE_BUS_1 13
+#define ONE_WIRE_BUS_2 5
+OneWire oneWire1(ONE_WIRE_BUS_1);
+OneWire oneWire2(ONE_WIRE_BUS_2);
+DallasTemperature sensors1(&oneWire1);
+DallasTemperature sensors2(&oneWire2);
+/*
 float sensorValue_current;
 float batt_current;
 
-const int CURRENT_SENSOR_PIN;                        // current sensor analog signal pin
-const float MAX_CURRENT;                             // current sensor maximum value (A) (range: 0-200) 
-const float divider_current;                         // current sensor divider value 
-const int VOLTAGE_SENSOR_PIN;                        // voltage sensor analog signal pin
-const float MAX_VOLTAGE;                             // voltage sensor maximum value (V) (range: 0-58)
-const float divider_volt;                            // voltage sensor divider value
+// Define the analog pin that the current sensor module is connected to
+const int CURRENT_SENSOR_PIN = A1;
+// Define the maximum current that the current sensor module can measure
+const float MAX_CURRENT = 200; // Amps 
+*/
+// Define the analog pin that the voltage sensor module is connected to
+const int VOLTAGE_SENSOR_PIN = A2;
+// Define the maximum volts that the voltage sensor module can measure
+const float MAX_VOLTAGE = 51.8; // volts
+// Define the voltage divider value
+const float divider_volt = 15.7; //
 
-/* Thermal camera variables setup based on MLX90640 library */
-Adafruit_MLX90640 mlx;
-float frame[32*24];                                  // buffer for full frame of temperatures
-float Ta;                                            // Ambient temperature value           
-float t;                                      
 
-/* RGB camera variables*/
-static const int CS;                                 // RGB camera Chip Select (CS) pin                      
-Serial_ArduCAM_FrameGrabber fg;
-ArduCAM_Mini_2MP myCam(CS, &fg);
-const int width;                                     // RGB camera set resolution
-const int height;                                    // RGB camera set resolution
-const int markers = 4;                               // no. of markers in RGB data
-const int arraySize = (width * height * 3) + markers; 
-unsigned int array[arraySize];
 
-const byte START_MARKER[] = {0xAA, 0xBB};            // Markers to mark start of an array
-const byte END_MARKER[] = {0xDD, 0xEE};              // Markers to mark end of an array
-int check = 1;
+const int numValues = 4; // Number of expected integer values
+
+// Customize here pulse lengths as needed
+int ESC_min = 1000;    // Minimum pulse length in µs
+int ESC_max = 2000;    // Maximum pulse length in µs
+
+Servo mot;
+unsigned int current_PWM = ESC_min;
+unsigned int input_PWM = ESC_min;
+
+// RPM sensor variables
+byte PulsesPerRevolution = 2;     // number of blades
+const unsigned long ZeroTimeout = 100000;     // in microseconds
+
+volatile unsigned long LastTimeWeMeasured;
+volatile unsigned long PeriodBetweenPulses = ZeroTimeout + 1000;
+volatile unsigned long PeriodAverage = ZeroTimeout + 1000;
+unsigned long FrequencyRaw;       // frequency of obstacle detected
+unsigned long FrequencyReal;
+unsigned long RPM;
+unsigned int PulseCounter = 1;
+unsigned long PeriodSum;
+
+unsigned long LastTimeCycleMeasure = LastTimeWeMeasured;
+unsigned long CurrentMicros = micros();
+unsigned int AmountOfReadings = 1;
+unsigned int ZeroDebouncingExtra;    // to avoid signal bouncing effects
+
+
+
+// Define the analog pin that the current sensor module is connected to
+const int RPM_SENSOR_PIN = 2;
+const int width = 32;
+const int height = 24;
+const int arraySize = width * height * 3;
+
+// Real sensor variables (no dummy arrays)
+float batt_current = 0.0;  // No current sensor connected
+float weight1 = 0.0;       // Load cell 1 value
+float weight2 = 0.0;       // Load cell 2 value
+float temperature1;
+float temperature2;
+float temperature3;
+float temperature4;
+float temperature5;
+float temperature6;
+float Ta;
+
+// Simple HX711 read function
+long readHX711(int dout_pin, int sck_pin) {
+  long value = 0;
+  
+  // Wait for chip to be ready
+  while (digitalRead(dout_pin) == HIGH);
+  
+  // Read 24 bits
+  for (int i = 0; i < 24; i++) {
+    digitalWrite(sck_pin, HIGH);
+    value = value << 1;
+    if (digitalRead(dout_pin)) value++;
+    digitalWrite(sck_pin, LOW);
+  }
+  
+  // Set gain to 128 (1 extra pulse)
+  digitalWrite(sck_pin, HIGH);
+  digitalWrite(sck_pin, LOW);
+  
+  // Convert to signed value
+  if (value & 0x800000) {
+    value |= (long) ~0xFFFFFF;
+  }
+  
+  return value;
+}
 
 void setup() {
-    Serial.begin(115200);
-    delay(100);
+  Serial.begin(115200);
+  delay(100);
 
-    /* sensor pins assignment and setup */
-    attachInterrupt(digitalPinToInterrupt(RPM_SENSOR_PIN), Pulse_Event, RISING); 
-    RPM = 0; 
+// sensor pin assignment 
+  pinMode(RPM_SENSOR_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(RPM_SENSOR_PIN), Pulse_Event, FALLING);
+  /*pinMode(CURRENT_SENSOR_PIN, INPUT);
+  pinMode(VOLTAGE_SENSOR_PIN, INPUT);*/
+  mot.attach(4, ESC_min, ESC_max);
+  mot.writeMicroseconds(ESC_min);
+  
+  // Initialize Dallas Temperature sensors
+  sensors1.begin();
+  sensors2.begin();
 
-    pinMode(CURRENT_SENSOR_PIN, INPUT);
-    pinMode(VOLTAGE_SENSOR_PIN, INPUT);
-    batt_current = 0;
-    batt_volt = 0;
+  // Initialize HX711 Load Cells
+  pinMode(LOADCELL1_DOUT_PIN, INPUT);
+  pinMode(LOADCELL1_SCK_PIN, OUTPUT);
+  pinMode(LOADCELL2_DOUT_PIN, INPUT);
+  pinMode(LOADCELL2_SCK_PIN, OUTPUT);
+  delay(100);
+  
+  // Get tare values
+  long sum1 = 0, sum2 = 0;
+  for (int i = 0; i < 10; i++) {
+    sum1 += readHX711(LOADCELL1_DOUT_PIN, LOADCELL1_SCK_PIN);
+    sum2 += readHX711(LOADCELL2_DOUT_PIN, LOADCELL2_SCK_PIN);
+    delay(10);
+  }
+  OFFSET_1 = sum1 / 10;
+  OFFSET_2 = sum2 / 10;
 
-    mot.attach(MOTOR_SIGNAL_PIN, ESC_min, ESC_max);
-    mot.writeMicroseconds(ESC_min);
+// parameter initialisation
+  RPM = 0;
 
-    scale1.begin(LOADCELL1_DOUT_PIN, LOADCELL1_SCK_PIN);
-    scale1.set_scale(calibration_factor_1);
-    scale1.tare();                                       //Assuming there is no weight on the scale at start up
-    scale2.begin(LOADCELL2_DOUT_PIN, LOADCELL2_SCK_PIN);
-    scale2.set_scale(calibration_factor_2);
-    scale2.tare();
-
-    if (! mlx.begin(MLX90640_I2CADDR_DEFAULT, &Wire)) {
-    Serial.println("Thermal camera error 1");
-    while (1) delay(10);
-    }
-    mlx.setMode(MLX90640_CHESS);
-    mlx.setResolution(MLX90640_ADC_18BIT);
-    mlx.setRefreshRate(MLX90640_2_HZ);
-
-    Wire.begin();
-    SPI.begin();
-    myCam.beginJpeg320x240();                            // Start the camera image size  
-
-    delay(100);
+  Serial.println("Setup Done");
+  delay(100);
 }
 
 void loop() {
-    if (Serial.available() > 0) {
-        String inputString = Serial.readStringUntil('\n');
-        char inputChars[inputString.length() + 1];
-        inputString.toCharArray(inputChars, inputString.length() + 1);
-        char *token = strtok(inputChars, ",");
-        int index = 0;
-        while (token != NULL && index < numValues) {
-            int parsedValue = atof(token); 
-            switch (index) {
-            case 0: PulsesPerRevolution = parsedValue; break;
-            case 1: ESC_min = parsedValue; break;
-            case 2: ESC_max = parsedValue; break;
-            case 3: input_PWM = parsedValue; break;
-            }
-        index++;
-        token = strtok(NULL, ","); 
-        }
+  if (Serial.available() > 0) {
+    String inputString = Serial.readStringUntil('\n');
+    char inputChars[inputString.length() + 1];
+    inputString.toCharArray(inputChars, inputString.length() + 1);
+    // Parse the input using strtok()
+    char *token = strtok(inputChars, ",");
+    int index = 0;
+    while (token != NULL && index < numValues) {
+      int parsedValue = atof(token); // Convert token to an integer
+      switch (index) {
+        case 0: PulsesPerRevolution = parsedValue; break;
+        case 1: ESC_min = parsedValue; break;
+        case 2: ESC_max = parsedValue; break;
+        case 3: input_PWM = parsedValue; break;
+      }
+      index++;
+      token = strtok(NULL, ","); // Get the next token
     }
-    if (check == 1) {
-    mot.attach(4, ESC_min, ESC_max);
-    mot.writeMicroseconds(ESC_min);
-    count ++;
-    }
-
+  }
+    // mot.attach(4, ESC_min, ESC_max);
+    // mot.writeMicroseconds(ESC_min);
     if ((input_PWM > (ESC_min-1)) && (input_PWM < (ESC_max+1)))
     {
         if(input_PWM < current_PWM) {
@@ -196,131 +223,144 @@ void loop() {
     current_PWM = input_PWM;
     } 
   
-    /* Voltage & current sensor module calculations */
-    sensorValue_volt = analogRead(VOLTAGE_SENSOR_PIN);
-    sensorValue_current = analogRead(CURRENT_SENSOR_PIN);
-    batt_voltage = sensorValue_volt * (3.3 / 1024.0);
-    batt_voltage = batt_voltage * divider_volt;
-    batt_current = sensorValue_current * (3.3 / 1024.0);  
-    batt_current = batt_current * divider_current;
 
-    /* Frame capture from thermal camera */
-    if (mlx.getFrame(frame) != 0) {
-        Serial.println("Thermal camera error 2");
-        return;
-    }
-    /* Ambient temperature measurement from thermal camera */
-    Ta = mlx.getTa(false); 
+  // Read the voltage from the voltage & current sensor module
+  sensorValue_volt = analogRead(VOLTAGE_SENSOR_PIN);
+  // sensorValue_current = analogRead(CURRENT_SENSOR_PIN); // commented: current sensor not in use
+  // Convert the voltage sensor input voltage to battery voltage value (Mega default 5V ref)
+  voltage = sensorValue_volt * (5.0 / 1024.0);
+  //voltage = arduino_voltage * (3.3 / 5.0);
+  batt_volt = voltage * divider_volt;
 
-    /* Motor RPM calculation */
-    LastTimeCycleMeasure = LastTimeWeMeasured;
-    CurrentMicros = micros();
-    if (CurrentMicros < LastTimeCycleMeasure) {
-        LastTimeCycleMeasure = CurrentMicros;
-    }
-    FrequencyRaw = 10000000000 / PeriodAverage;  // in microseconds
-    if (PeriodBetweenPulses > ZeroTimeout - ZeroDebouncingExtra || CurrentMicros - LastTimeCycleMeasure > ZeroTimeout - ZeroDebouncingExtra) {
-        FrequencyRaw = 0;  // Set frequency as 0.
-        ZeroDebouncingExtra = 2000;
-    } else {
-        ZeroDebouncingExtra = 0;
-    }
-    FrequencyReal = FrequencyRaw/10000;
-    RPM = (FrequencyRaw / PulsesPerRevolution) * 60;
-    RPM = RPM / 10000;
+  // Read Dallas Temperature sensors
+  sensors1.requestTemperatures();
+  sensors2.requestTemperatures();
+  temperature2 = sensors1.getTempCByIndex(0);  // First temperature sensor on pin 5
+  temperature3 = sensors2.getTempCByIndex(0);  // Second temperature sensor on pin 6
+  
+  // Set other temperature variables to 0
+  temperature1 = 0.0;
+  temperature4 = 0.0;
+  temperature5 = 0.0;
+  temperature6 = 0.0;
+  Ta = 0.0;
 
-    /* Load cell data capture */
-    if(scale1.is_ready() && scale2.is_ready()) {
-        float weight1 = scale1.get_units();
-        float weight2 = scale2.get_units();    
-    } 
-    else {
-        Serial.println("HX711 not ready. Check connections");
-    }
+  // Read weight from both Load Cells (simple calculation)
+  long raw1 = readHX711(LOADCELL1_DOUT_PIN, LOADCELL1_SCK_PIN);
+  long raw2 = readHX711(LOADCELL2_DOUT_PIN, LOADCELL2_SCK_PIN);
+  weight1 = (float)(raw1 - OFFSET_1) / calibration_factor;
+  weight2 = (float)(raw2 - OFFSET_2) / calibration_factor_2;
+  
+  // DEBUG: Uncomment to see raw values and help with calibration
+  // Serial.print("RAW1: "); Serial.print(raw1);
+  // Serial.print(" | OFFSET1: "); Serial.print(OFFSET_1);
+  // Serial.print(" | DIFF1: "); Serial.println(raw1 - OFFSET_1);
 
-    /* RGB camera data capture */
-    array = myCam.capture();
-    
-    /* Sensor value outputs to software */
-    Serial.print(device_id);
-    Serial.print(",");
-    Serial.print(current_PWM);
-    Serial.print(",");
-    Serial.print(RPM);
-    Serial.print(",");
-    Serial.print(batt_current);
-    Serial.print(",");
-    Serial.print(batt_volt);
-    Serial.print(",");
-    Serial.print(weight1);
-    Serial.print(",");
-    Serial.print(weight2);
-    Serial.print(",");
-    Serial.print(Ta); 
-    Serial.print(",");
-    Serial.print("0x");
-    Serial.print(START_MARKER[0], HEX);
-    Serial.print(",");
-    Serial.print("0x");
-    Serial.print(START_MARKER[1], HEX);
-    Serial.print(",");
-    for (uint8_t h=0; h<24; h++) {
-        for (uint8_t w=0; w<32; w++) {
-            t = frame[h*32 + w];
-            Serial.print(t, 2);
-            Serial.print(",");
+/*// Convert the current sensor input voltage to battery current value
+  batt_current = (sensorValue_current / 1024.0) * 200;  
+
+  //get frame data from thermal camera
+  if (mlx.getFrame(frame) != 0) {
+    Serial.println("Thermal camera error 2");
+    return;
+  }
+  //Measure ambient temperature
+  Ta = mlx.getTa(false); // false = no new frame capture
+
+   // load cell data collection
+  
+  if(scale1.is_ready() && scale2.is_ready()) {
+    float weight1 = scale1.get_units();
+    float weight2 = scale2.get_units();    
+  } 
+  else {
+    Serial.println("HX711 not ready. Check connections");
+  }*/
+  
+  /*if(scale2.is_ready()) {
+    float weight2 = scale2.get_units();
+  } 
+  else {
+    Serial.println("Loadcell error");
+  }
+*/
+
+  // calculate motor RPM
+  LastTimeCycleMeasure = LastTimeWeMeasured;
+  CurrentMicros = micros();
+  if (CurrentMicros < LastTimeCycleMeasure) {
+    LastTimeCycleMeasure = CurrentMicros;
+  }
+  FrequencyRaw = 10000000000 / PeriodAverage;  // in microseconds
+  if (PeriodBetweenPulses > ZeroTimeout - ZeroDebouncingExtra || CurrentMicros - LastTimeCycleMeasure > ZeroTimeout - ZeroDebouncingExtra) {
+    FrequencyRaw = 0;  // Set frequency as 0.
+    ZeroDebouncingExtra = 2000;
+  } else {
+    ZeroDebouncingExtra = 0;
+  }
+  FrequencyReal = FrequencyRaw/10000;
+
+  RPM = (FrequencyRaw / PulsesPerRevolution) * 60;
+   RPM = RPM / 10000;
+  
+  Serial.print("UAT002");
+  Serial.print(",");
+  Serial.print(current_PWM);
+  Serial.print(",");
+  Serial.print(RPM);
+  Serial.print(",");
+  Serial.print(batt_current);
+  Serial.print(",");
+  Serial.print(batt_volt, 2);
+  Serial.print(",");
+  Serial.print(weight2);
+  Serial.print(",");
+  Serial.print(weight1);
+  Serial.print(",");
+  Serial.print(temperature1, 1);
+  Serial.print(",");
+  Serial.print(temperature2, 1);
+  Serial.print(",");
+  Serial.print(temperature3, 1);
+  Serial.print(",");
+  Serial.print(temperature4, 1);
+  Serial.print(",");
+  Serial.print(temperature5, 1);
+  Serial.print(",");
+  Serial.print(temperature6, 1);
+  Serial.print(",");
+  Serial.print(Ta, 1);
+  for (uint8_t h=0; h<24; h++) {
+      for (uint8_t w=0; w<32; w++) {
+         int t = 0;
+         //Serial.print(t, 2);
+         //Serial.print(",");
+      }
+  }
+  //Serial.print(",");
+  for (int i = 0; i < arraySize; i++) {  
+        //Serial.print("0x00");
+        if ( i< arraySize - 1) {
+        //Serial.print(","); // Add delimiter
         }
-    }
-    Serial.print(",");
-    Serial.print("0x");
-    Serial.print(END_MARKER[0], HEX);
-    Serial.print(",");
-    Serial.print("0x");
-    Serial.print(END_MARKER[1], HEX);
-    Serial.print(",");
-    Serial.print("0x");
-    Serial.print(START_MARKER[0], HEX);
-    Serial.print(",");
-    Serial.print("0x");
-    Serial.print(START_MARKER[1], HEX);
-    Serial.print(",");
-    for (int i = 0; i < imgsize; i++) {    
-        if((i>1) && (i<=(imgsize-2)))
-        {
-            Serial.print("0x");
-            if (array[i] < 0x10) {
-                Serial.print("0");
-            }
-            Serial.print(array[i], HEX);
-            if (i < arraySize - 1) {
-                Serial.print(", ");
-            }
-        }
-    }
-    Serial.print(",");
-    Serial.print("0x");
-    Serial.print(END_MARKER[0], HEX);
-    Serial.print(",");
-    Serial.print("0x");
-    Serial.print(END_MARKER[1], HEX);
-    Serial.println();
-    delay(500);
+  }
+  Serial.println();
+  delay(500);
 }
 
-/* Interrupt event to calculate motor RPM */
 void Pulse_Event() {
-    PeriodBetweenPulses = micros() - LastTimeWeMeasured;
-    LastTimeWeMeasured = micros();
-    if (PulseCounter >= AmountOfReadings)  {
-        PeriodAverage = PeriodSum / AmountOfReadings;
-        PulseCounter = 1;
-        PeriodSum = PeriodBetweenPulses;
-        int RemapedAmountOfReadings = map(PeriodBetweenPulses, 40000, 5000, 1, 10);
-        RemapedAmountOfReadings = constrain(RemapedAmountOfReadings, 1, 10);
-        AmountOfReadings = RemapedAmountOfReadings;
-    } else {
-        PulseCounter++;
-        PeriodSum = PeriodSum + PeriodBetweenPulses;
-    }
-}
+  PeriodBetweenPulses = micros() - LastTimeWeMeasured;
+  LastTimeWeMeasured = micros();
+  if (PulseCounter >= AmountOfReadings)  {
+    PeriodAverage = PeriodSum / AmountOfReadings;
+    PulseCounter = 1;
+    PeriodSum = PeriodBetweenPulses;
 
+    int RemapedAmountOfReadings = map(PeriodBetweenPulses, 40000, 5000, 1, 10);
+    RemapedAmountOfReadings = constrain(RemapedAmountOfReadings, 1, 10);
+    AmountOfReadings = RemapedAmountOfReadings;
+  } else {
+    PulseCounter++;
+    PeriodSum = PeriodSum + PeriodBetweenPulses;
+  }
+}
