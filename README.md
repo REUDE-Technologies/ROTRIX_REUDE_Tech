@@ -1,5 +1,6 @@
-# REUDE_ROTRIX
-Description
+# ROTRIX
+
+## Description
 This report provides guidance on designing the hardware and firmware necessary to integrate with the ROTRIX application. ROTRIX is an online tool that connects to your motor thrust test bed, helping you select the optimal powertrain for your drone. It enables you to characterize and evaluate the performance of motor, propeller, and ESC combinations under various test conditions, allowing you to choose the best configuration. To use this tool, specific hardware components and custom firmware are needed to transmit the necessary data to the software. This report outlines the hardware requirements and firmware development process for seamless integration with ROTRIX.
 
 ## Introduction
